@@ -1,0 +1,277 @@
+/*
+ * Copyright 2020, Data61
+ * Commonwealth Scientific and Industrial Research Organisation (CSIRO)
+ * ABN 41 687 119 230.
+ *
+ * This software may be distributed and modified according to the terms of
+ * the BSD 2-Clause license. Note that NO WARRANTY is provided.
+ * See "LICENSE_BSD2.txt" for details.
+ *
+ * @TAG(DATA61_BSD)
+ */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <string.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <arpa/inet.h>
+
+#define START_PMU 3
+#define STOP_PMU 5
+
+#define BUFFER_SIZE 5000
+#define MAX_BACKLOG 50
+
+/* This file implements a TCP based utilization measurment process that starts
+ * and stops utilization measurements based on a client's requests.
+ * The protocol used to communicate is as follows:
+ * - Client connects
+ * - Server sends: 100 IPBENCH V1.0\n
+ * - Client sends: HELLO\n
+ * - Server sends: 200 OK (Ready to go)\n
+ * - Client sends: LOAD cpu_target_lukem\n
+ * - Server sends: 200 OK\n
+ * - Client sends: SETUP args::""\n
+ * - Server sends: 200 OK\n
+ * - Client sends: START\n
+ * - Client sends: STOP\n
+ * - Server sends: 220 VALID DATA (Data to follow)\n
+ *                                Content-length: %d\n
+ *                                ${content}\n
+ * - Server closes socket.
+ *
+ * It is also possible for client to send QUIT\n during operation.
+ *
+ * The server starts recording utilization stats when it receives START and
+ * finishes recording when it receives STOP.
+ *
+ * Only one client can be connected.
+ */
+
+static struct tcp_pcb *utiliz_socket;
+uintptr_t data_packet;
+uintptr_t cyclecounters_vaddr;
+
+#define WHOAMI "100 IPBENCH V1.0\n"
+#define HELLO "HELLO\n"
+#define OK_READY "200 OK (Ready to go)\n"
+#define LOAD "LOAD cpu_target_lukem\n"
+#define OK "200 OK\n"
+#define SETUP "SETUP args::\"\"\n"
+#define START "START\n"
+#define STOP "STOP\n"
+#define QUIT "QUIT\n"
+#define RESPONSE "220 VALID DATA (Data to follow)\n"    \
+    "Content-length: %d\n"                              \
+    "%s\n"
+#define IDLE_FORMAT ",%ld,%ld"
+#define ERROR "400 ERROR\n"
+
+#define msg_match(msg, match) (strncmp(msg, match, strlen(match))==0)
+
+#define STR_HELPER(x) #x
+#define STR(x) STR_HELPER(x)
+#define RES(x, y, z) "220 VALID DATA (Data to follow)\n"    \
+    "Content-length: "STR(x)"\n"\
+    ","STR(y)","STR(z)
+
+
+#define ULONG_MAX 0xffffffffffffffff
+
+// struct bench *bench = (void *)(uintptr_t)0x5010000;
+
+uint64_t start;
+uint64_t idle_ccount_start;
+uint64_t idle_overflow_start;
+
+
+static inline void my_reverse(char s[])
+{
+    int i, j;
+    char c;
+
+    for (i = 0, j = strlen(s)-1; i<j; i++, j--) {
+        c = s[i];
+        s[i] = s[j];
+        s[j] = c;
+    }
+}
+
+static inline void my_itoa(uint64_t n, char s[])
+{
+    int i;
+    uint64_t sign;
+
+    if ((sign = n) < 0)  /* record sign */
+        n = -n;          /* make n positive */
+    i = 0;
+    do {       /* generate digits in reverse order */
+        s[i++] = n % 10 + '0';   /* get next digit */
+    } while ((n /= 10) > 0);     /* delete it */
+    if (sign < 0)
+        s[i++] = '-';
+    s[i] = '\0';
+    my_reverse(s);
+}
+
+static int handle_recv(int client, const char data_packet[], size_t len)
+{
+    ssize_t error;
+    if (msg_match(data_packet, HELLO)) {
+        error = send(client, OK_READY, strlen(OK_READY), 0x0);
+        if (error < 0) {
+            printf("Failed to send OK_READY message through utilization peer");
+        }
+    } else if (msg_match(data_packet, LOAD)) {
+        error = send(client, OK, strlen(OK), 0x0);
+        if (error < 0) {
+            printf("Failed to send OK message through utilization peer");
+        }
+    } else if (msg_match(data_packet, SETUP)) {
+        error = send(client, OK, strlen(OK), 0x0);
+        if (error < 0) {
+            printf("Failed to send OK message through utilization peer");
+        }
+    } else if (msg_match(data_packet, START)) {
+        printf("measurement starting... \n");
+
+        // start = bench->ts;
+        // idle_ccount_start = bench->ccount;
+        // idle_overflow_start = bench->overflows;
+
+        // sel4cp_notify(START_PMU);    
+
+    } else if (msg_match(data_packet, STOP)) {        
+        printf("measurement finished \n");;
+        
+        uint64_t total, idle;
+
+        // total = bench->ts - start;
+        // total += ULONG_MAX * (bench->overflows - idle_overflow_start);
+        // idle = bench->ccount - idle_ccount_start;
+        total = 0;
+        idle = 0;
+
+        char tbuf[16];
+        my_itoa(total, tbuf);
+
+        char ibuf[16];
+        my_itoa(idle, ibuf);
+
+        char buffer[100];
+
+        int len = strlen(tbuf) + strlen(ibuf) + 2;
+        char lbuf[16];
+        my_itoa(len, lbuf);
+
+        strcat(strcpy(buffer, "220 VALID DATA (Data to follow)\nContent-length: "), lbuf);
+        strcat(buffer, "\n,");
+        strcat(buffer, ibuf);
+        strcat(buffer, ",");
+        strcat(buffer, tbuf);
+
+        printf(buffer);
+        error = send(client, buffer, strlen(buffer), 0x0);
+
+        close(client);
+        return -1;
+    } else if (msg_match(data_packet, QUIT)) {
+        /* Do nothing for now */
+    } else {
+        printf("Received a message that we can't handle ");
+        printf(data_packet);
+        printf("\n");
+        error = send(client, ERROR, strlen(ERROR), 0x0);
+        if (error < 0) {
+            printf("Failed to send OK message through utilization peer");
+        }
+    }
+
+    return 0;
+}
+static void fail(const char* msg) {
+    perror(msg);
+    exit(-1);
+}
+void tcpStart(int port, char buf[], int buf_size) {
+    #ifdef DEBUG
+        printf("Beginning TCP echo on port %d\n", port);
+    #endif
+    
+    struct sockaddr_in sockAddr;
+    socklen_t sockAddrLen;
+    ssize_t msgLen;
+
+    // Prepare socket address
+    sockAddr.sin_family = AF_INET;
+    sockAddr.sin_port = htons(port);
+    sockAddr.sin_addr.s_addr = INADDR_ANY;
+
+    // Create socket
+    int sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (!sock) fail("Failed to create socket!");
+
+    // Set buffer
+    int bufsize = BUFFER_SIZE;
+    setsockopt(sock, SOL_SOCKET, SO_RCVBUF, &bufsize, sizeof bufsize);
+
+    // Try bind
+    if (bind(sock, (struct sockaddr *)&sockAddr, sizeof sockAddr)) 
+        fail("Failed to bind.");
+
+    // Begin listen
+    if(listen(sock, MAX_BACKLOG))
+        fail("Failed to begin listening.");
+
+    // Server loop
+    for (;;) {
+        sockAddrLen = sizeof sockAddr;
+        size_t num_bytes = 0; // Size of received message
+
+        // Accept next client
+        int client = accept(sock, (struct sockaddr *)&sockAddr, &sockAddrLen);
+        printf("Accepted a client: %d\n", client);
+        
+        send(client, WHOAMI, sizeof WHOAMI, 0x0);
+
+        // Receive until client releases
+        while ((num_bytes = recv(client, buf, BUFFER_SIZE, 0x0))) {
+            #ifdef DEBUG
+                // Get IP address as string
+                struct sockaddr_in* ipv4 = (struct sockaddr_in*)&sockAddr;
+                struct in_addr ip = ipv4->sin_addr;
+                char ip_str[INET_ADDRSTRLEN];
+                inet_ntop( AF_INET, &ip, ip_str, INET_ADDRSTRLEN );
+                
+                // Echo message content
+                printf("%s : %.*s\n", ip_str, num_bytes, buf);
+            #endif
+
+            int res = handle_recv(client, buf, BUFFER_SIZE);
+            if (res == -1) {
+                break;
+            }
+            // // Reply
+            // send(client, buf, num_bytes, 0x0);
+        }
+        printf("Closing connection withls client: %d\n", client);
+
+        // Terminate connection
+        // close(client);
+    }
+}
+
+int main(int argc, const char *argv[]) {
+    if (argc != 2) exit(-1);
+
+    printf("Starting util_sokcet\n");
+
+    int port = atoi(argv[1]);
+    char buf[BUFFER_SIZE];
+    tcpStart(port, buf, BUFFER_SIZE);
+    return 0;
+}
