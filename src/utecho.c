@@ -3,18 +3,26 @@
 // 07/12/2022
 
 #include "utecho.h"
+#include "utilisation.h"
+#include <pthread.h>
 
 static void usage()
 {
-    printf("USAGE: utecho [port] [mode]\n Modes: tcp, udp");
+    printf("USAGE: utecho [port] [mode] [RCV BUF size]\n Modes: tcp, udp");
     exit(-1);
+}
+
+void *CPU_util_thread(void *arg)
+{
+    start_CPU_util();
 }
 
 int main(int argc, const char *argv[])
 {
-    if (argc != 3)
+    if (argc != 4)
         usage();
     int port = atoi(argv[1]);
+    int recv_buf_size = atoi(argv[3]);
 
     // Set mode
     int mode = 0;
@@ -33,13 +41,17 @@ int main(int argc, const char *argv[])
     }
     char buf[BUFFER_SIZE];
 
+    // pthread_t ithr0;
+    // pthread_create(&ithr0, NULL, &CPU_util_thread, NULL);
+    // // start_CPU_util();
+    // printf("Here\n");
     switch (mode)
     {
     case MODE_TCP:
         tcpEcho(port, buf, BUFFER_SIZE);
         break;
     case MODE_UDP:
-        udpEcho(port, buf, BUFFER_SIZE);
+        udpEcho(port, buf, BUFFER_SIZE, recv_buf_size);
         break;
     }
 

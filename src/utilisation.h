@@ -1,3 +1,10 @@
+#include <sys/types.h>
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <stdint.h>
+
 #ifdef _MSC_VER
 #include <intrin.h>
 #else
@@ -34,3 +41,5 @@ x86_get_cycles()
     return __rdtsc();
     // _mm_lfence();  // optionally block later instructions until rdtsc retires
 }
+
+int start_CPU_util();

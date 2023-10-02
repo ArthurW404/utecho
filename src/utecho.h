@@ -13,7 +13,7 @@
 #define MODE_UDP 0
 #define MODE_TCP 1
 
-void udpEcho(int port, char buf[], int buf_size);
+void udpEcho(int port, char buf[], int buf_size, int recv_buf_size);
 void tcpEcho(int port, char buf[], int buf_size);
 
 static void fail(const char *msg)
