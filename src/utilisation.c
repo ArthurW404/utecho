@@ -69,7 +69,7 @@
 
 char buf[BUFFER_SIZE];
 
-#define NUM_CORES 24
+#define NUM_CORES 1
 /* idle threads */
 static pthread_t ithrds[NUM_CORES];
 // static pthread_t ithr0;
@@ -133,46 +133,50 @@ process_msg(int client, const void *buf, size_t num_bytes)
     {
         printf("measurement finished \n");
 
-    char cores[NUM_CORES][16];
-    int len = NUM_CORES;
+        char cores[NUM_CORES][16];
+        int len = NUM_CORES;
 
-    for (int i =0 ; i < NUM_CORES; ++i) {
-        sprintf(cores[i], "%.1f", (1.f - ((double)timer_info.timer_buffer[i].idle / (double)timer_info.timer_buffer[i].total)) * 100);
-        len += strlen(cores[i]);
-    }
-
-    // %s,%s,%s,%s\n
-    snprintf(buffer, BUFFER_SIZE, "220 VALID DATA (Data to follow)\nContent-length: %d\n", len);
-    for (int i =0 ; i < NUM_CORES; ++i) {
-        int prev_len = strlen(buffer);
-        if (i != NUM_CORES - 1) {
-            snprintf(&buffer[prev_len], BUFFER_SIZE - prev_len, "%s,", cores[i]);
-        } else {
-            snprintf(&buffer[prev_len], BUFFER_SIZE - prev_len, "%s\n", cores[i]);
+        for (int i = 0; i < NUM_CORES; ++i)
+        {
+            sprintf(cores[i], "%.1f", (1.f - ((double)timer_info.timer_buffer[i].idle / (double)timer_info.timer_buffer[i].total)) * 100);
+            len += strlen(cores[i]);
         }
-    }
 
-//         char core0[16];
-//         sprintf(core0, "%.1f", (1.f - ((double)timer_info.timer_buffer[0].idle / (double)timer_info.timer_buffer[0].total)) * 100);
+        // %s,%s,%s,%s\n
+        snprintf(buffer, BUFFER_SIZE, "220 VALID DATA (Data to follow)\nContent-length: %d\n", len);
+        for (int i = 0; i < NUM_CORES; ++i)
+        {
+            int prev_len = strlen(buffer);
+            if (i != NUM_CORES - 1)
+            {
+                snprintf(&buffer[prev_len], BUFFER_SIZE - prev_len, "%s,", cores[i]);
+            }
+            else
+            {
+                snprintf(&buffer[prev_len], BUFFER_SIZE - prev_len, "%s\n", cores[i]);
+            }
+        }
 
-// #if NUM_CORES == 4
-//         char core1[16];
-//         char core2[16];
-//         char core3[16];
-//         sprintf(core1, "%.1f", (1.f - ((double)timer_info.timer_buffer[1].idle / (double)timer_info.timer_buffer[1].total)) * 100);
-//         sprintf(core2, "%.1f", (1.f - ((double)timer_info.timer_buffer[2].idle / (double)timer_info.timer_buffer[2].total)) * 100);
-//         sprintf(core3, "%.1f", (1.f - ((double)timer_info.timer_buffer[3].idle / (double)timer_info.timer_buffer[3].total)) * 100);
-// #endif
-    // int len = strlen(core0) + strlen(core1) + strlen(core2) + strlen(core3) + 4;
+        //         char core0[16];
+        //         sprintf(core0, "%.1f", (1.f - ((double)timer_info.timer_buffer[0].idle / (double)timer_info.timer_buffer[0].total)) * 100);
 
+        // #if NUM_CORES == 4
+        //         char core1[16];
+        //         char core2[16];
+        //         char core3[16];
+        //         sprintf(core1, "%.1f", (1.f - ((double)timer_info.timer_buffer[1].idle / (double)timer_info.timer_buffer[1].total)) * 100);
+        //         sprintf(core2, "%.1f", (1.f - ((double)timer_info.timer_buffer[2].idle / (double)timer_info.timer_buffer[2].total)) * 100);
+        //         sprintf(core3, "%.1f", (1.f - ((double)timer_info.timer_buffer[3].idle / (double)timer_info.timer_buffer[3].total)) * 100);
+        // #endif
+        // int len = strlen(core0) + strlen(core1) + strlen(core2) + strlen(core3) + 4;
 
-// #if NUM_CORES == 4
-//         int len = strlen(core0) + strlen(core1) + strlen(core2) + strlen(core3) + 4;
-//         snprintf(buffer, 100, "220 VALID DATA (Data to follow)\nContent-length: %d\n%s,%s,%s,%s\n", len, core0, core1, core2, core3);
-// #else
-//         int len = strlen(core0) + 1;
-//         snprintf(buffer, 100, "220 VALID DATA (Data to follow)\nContent-length: %d\n%s\n", len, core0);
-// #endif
+        // #if NUM_CORES == 4
+        //         int len = strlen(core0) + strlen(core1) + strlen(core2) + strlen(core3) + 4;
+        //         snprintf(buffer, 100, "220 VALID DATA (Data to follow)\nContent-length: %d\n%s,%s,%s,%s\n", len, core0, core1, core2, core3);
+        // #else
+        //         int len = strlen(core0) + 1;
+        //         snprintf(buffer, 100, "220 VALID DATA (Data to follow)\nContent-length: %d\n%s\n", len, core0);
+        // #endif
 
         error = send(client, buffer, strlen(buffer), 0x0);
         if (error < 0)
@@ -262,9 +266,9 @@ int start_CPU_util()
     sockAddr.sin_port = htons(1236);
     // sockAddr.sin_addr.s_addr = htonl(INADDR_ANY);
 
-    // sockAddr.sin_addr.s_addr = INADDR_ANY;
-    inet_pton(AF_INET, "172.16.1.182", &sockAddr.sin_addr.s_addr); // IP address as string
-    memset(sockAddr.sin_zero, '\0', sizeof sockAddr.sin_zero);
+    sockAddr.sin_addr.s_addr = INADDR_ANY;
+    // inet_pton(AF_INET, "172.16.1.182", &sockAddr.sin_addr.s_addr); // IP address as string
+    // memset(sockAddr.sin_zero, '\0', sizeof sockAddr.sin_zero);
 
     // Create socket
     int sock = socket(AF_INET, SOCK_STREAM, 0);
